@@ -1,127 +1,111 @@
 const moduleID = "custom-character-sheet-sections";
 
-
-Hooks.once('init', () => {
-    game.settings.register(moduleID, 'hideEmpty', {
-        name: 'Hide Empty Sections',
-        scope: 'world',
-        config: true,
-        type: Boolean,
-        default: false
-    });
-});
-
+// Register a module wrapper for the character sheet data retrieval
 Hooks.once("ready", () => {
-    libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter'].cls.prototype.getData", customSectionGetData, "WRAPPER");
+  libWrapper.register(
+    moduleID,
+    "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter'].cls.prototype.getData",
+    customSectionGetData,
+    "WRAPPER"
+  );
 });
 
-
+// Handle rendering of an item sheet
 Hooks.on("renderItemSheet", (app, [html], appData) => {
-    const customSectionInput = document.createElement('div');
-    customSectionInput.classList.add('form-group');
-    customSectionInput.style.cssText = `
-        border: 1px solid var(--faint-color);
-        border-radius: 5px;
-        flex-direction: column;
-    `;
-    customSectionInput.innerHTML = `
-        <label>${game.i18n.localize(`${moduleID}.customSection`)}</label>
-        <input style="text-align: left;" type="text" name="flags.${moduleID}.sectionName" value="${app.object.flags[moduleID]?.sectionName || ""}" />
-    `;
-    const itemProperties = html.querySelector(`div.item-properties`);
-    if (itemProperties) itemProperties.appendChild(customSectionInput);
+  // Create a custom section input element
+  const customSectionInput = document.createElement("div");
+  customSectionInput.classList.add("form-group");
+  customSectionInput.style.cssText = `
+    border: 1px solid var(--faint-color);
+    border-radius: 5px;
+    flex-direction: column;
+  `;
+  customSectionInput.innerHTML = `
+    <label>${game.i18n.localize(`${moduleID}.customSection`)}</label>
+    <input style="text-align: left;" type="text" name="flags.${moduleID}.sectionName" value="${
+    app.object.flags[moduleID]?.sectionName || ""
+  }" />
+  `;
 
-    return;
+  // Find the item properties section and append the custom section input
+  const itemProperties = html.querySelector("div.item-properties");
+  if (itemProperties) itemProperties.appendChild(customSectionInput);
 });
 
+// Handle rendering of the 5e character sheet
 Hooks.on("renderActorSheet5eCharacter", (app, html, appData) => {
-    // Remove "Add Item" buttons from custom sections on character sheet
-    const addButtons = html.find(`a.item-create`);
-    addButtons.each(function() {
-        // Default dnd5e sheet
-        const firstItemLi = $(this).closest(`li.items-header`).next(`ol.item-list`).find(`li.item`);
-        const firstItem = app.object.items.get(firstItemLi?.data("itemId"));
+  // Remove "Add Item" buttons from custom sections on the character sheet
+  const addButtons = html.find("a.item-create");
+  addButtons.each(function () {
+    // Find the first and previous items to determine the custom section
+    const firstItemLi = $(this).closest("li.items-header").next("ol.item-list").find("li.item");
+    const prevItemLi = $(this).closest("li.items-footer").prev("li.item");
+    const firstItem = app.object.items.get(firstItemLi?.data("itemId"));
+    const prevItem = app.object.items.get(prevItemLi?.data("itemId"));
+    const item = firstItem || prevItem;
+    const customSectionName = item?.getFlag(moduleID, "sectionName");
 
-        // Tidy5e sheet
-        const prevItemLi = $(this).closest(`li.items-footer`).prev(`li.item`);
-        const prevItem = app.object.items.get(prevItemLi?.data("itemId"));
-
-        const item = firstItem || prevItem;
-        const customSectionName = item?.getFlag(moduleID, "sectionName");
-        if (!customSectionName) return;
-
-        $(this).remove();
-        return;
-    });
-
-    if (game.settings.get(moduleID, 'hideEmpty')) {
-        const headers = html[0].querySelectorAll('li.items-header');
-        for (const header of headers) {
-            const ol = header.nextElementSibling;
-            if (ol.tagName !== 'OL' || ol.childElementCount) continue;
-    
-            header.remove();
-        }
-    }
+    // Remove the "Add Item" button if it corresponds to a custom section
+    if (!customSectionName) return;
+    $(this).remove();
+  });
 });
 
-
+// Function to process and modify character sheet data
 async function customSectionGetData(wrapped) {
-    // Call wrapped function to get appData
-    const data = await wrapped();
-    
-    // Loop for Feature-type items, Inventory items, and Spell-type items
-    for (const type of ["features", "inventory", "spellbook"]) {
-        const itemsSpells = type === "spellbook" ? "spells" : "items";
+  // Call the wrapped function to retrieve the original appData
+  const data = await wrapped();
 
-        // Create array containing all items of current type
-        const items = data[type].reduce((acc, current) => {
-            if (current.isclass) return acc;
+  // Define a function to process items of a specific type
+  const processItemType = (type, itemsSpells, newItemType) => {
+    // Extract items of the specified type, excluding classes
+    const items = data[type]
+      .filter((current) => !current.isclass)
+      .flatMap((current) => current[itemsSpells]);
 
-            return acc.concat(current[itemsSpells]);
-        }, []);
+    // Filter items flagged with a custom section and get unique section names
+    const customSectionItems = items.filter((i) => i.flags[moduleID]?.sectionName);
+    const customSections = Array.from(
+      new Set(customSectionItems.map((item) => item.flags[moduleID].sectionName))
+    );
 
-        
-        // Get items flagged with a custom section
-        const customSectionItems = items.filter(i => i.flags[moduleID]?.sectionName);
-        // Create array of custom section names
-        const customSections = [];
-        for (const item of customSectionItems) {
-            if (!customSections.includes(item.flags[moduleID].sectionName)) customSections.push(item.flags[moduleID].sectionName);
-        }
-
-        // For items flagged with a custom section, remove them from their original section
-        for (const section of data[type]) {
-            section[itemsSpells] = section[itemsSpells].filter(i => !customSectionItems.includes(i));
-        }
-
-        // Create new custom sections and add to parent array
-        for (const customSection of customSections) {
-            const newSection = {
-                label: customSection,
-                [itemsSpells]: customSectionItems.filter(i => i.flags[moduleID].sectionName === customSection)
-            };
-            if (type === "features") {
-                newSection.hasActions = true;
-                newSection.isClass = false;
-                newSection.dataset = { type: "feat" };
-            } else if (type === "inventory") {
-
-            } else if (type === "spellbook") {
-                //newSection.spells = customSectionItems.filter(i => i.flags[moduleID].sectionName === customSection);
-                newSection.canCreate = false;
-                newSection.canPrepare = true;
-                newSection.dataset = {
-                    "preparation.mode": "prepared",
-                    type: "spell"
-                };
-                newSection.usesSlots = false;
-            }
-
-            data[type].push(newSection);
-        }
+    // Remove custom section items from their original sections
+    for (const section of data[type]) {
+      section[itemsSpells] = section[itemsSpells].filter((i) => !customSectionItems.includes(i));
     }
 
-    // Return updated data for sheet rendering
-    return data;
+    // Create new sections for custom items and add them to the character sheet data
+    for (const customSection of customSections) {
+      const newSection = {
+        label: customSection,
+        [itemsSpells]: customSectionItems.filter((i) => i.flags[moduleID].sectionName === customSection),
+      };
+
+      // Customize section properties based on the item type
+      if (type === "features") {
+        newSection.hasActions = true;
+        newSection.isClass = false;
+        newSection.dataset = { type: newItemType || "feat" };
+      } else if (type === "spellbook") {
+        newSection.canCreate = false;
+        newSection.canPrepare = true;
+        newSection.dataset = {
+          "preparation.mode": "prepared",
+          type: newItemType || "spell",
+        };
+        newSection.usesSlots = false;
+      }
+
+      // Add the new custom section to the character sheet data
+      data[type].push(newSection);
+    }
+  };
+
+  // Process and modify different item types
+  processItemType("features", "items", "feat"); // Features
+  processItemType("inventory", "items");         // Inventory
+  processItemType("spellbook", "spells", "spell"); // Spellbook
+
+  // Return the updated character sheet data for rendering
+  return data;
 }
