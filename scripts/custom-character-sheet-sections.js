@@ -1,5 +1,7 @@
 const moduleID = "custom-character-sheet-sections";
 
+const lg = x => console.log(x);
+
 
 Hooks.once('init', () => {
     game.settings.register(moduleID, 'hideEmpty', {
@@ -9,10 +11,39 @@ Hooks.once('init', () => {
         type: Boolean,
         default: false
     });
+
+    const itemListControlsElement = customElements.get('item-list-controls');
+    const new_applyGrouping = function () {
+        if (this._controls.group) {
+            const actorID = this.closest('div.sheet.actor.character').id.split('-').pop();
+            const actor = game.actors.get(actorID);
+
+            const group = this.prefs?.group !== false;
+            const sections = {};
+            for (const section of this.list.querySelectorAll(".items-section")) {
+                sections[section.dataset.type] = section.querySelector(".item-list");
+            }
+            for (const item of this.list.querySelectorAll(".item")) {
+                const itemID = item.dataset.itemId;
+                const fItem = actor?.items.get(itemID);
+                const customSection = fItem?.getFlag(moduleID, 'sectionName');
+                const { ungrouped } = item.dataset;
+                const grouped = customSection || item.dataset.grouped;
+                const section = this.getAttribute('for') === 'features' && customSection ? sections[grouped] : sections[group ? grouped : ungrouped];
+                section.appendChild(item);
+            }
+        }
+        this._applyFilters();
+        this._applySorting();
+
+    };
+    itemListControlsElement.prototype._applyGrouping = new_applyGrouping;
 });
 
 Hooks.once("ready", () => {
     libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter'].cls.prototype.getData", customSectionGetData, "WRAPPER");
+
+    libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter2'].cls.prototype.getData", characterSheet2getData, "WRAPPER");
 });
 
 
@@ -35,14 +66,14 @@ Hooks.on("renderItemSheet", (app, [html], appData) => {
 });
 
 Hooks.on("renderActorSheet5eCharacter", (app, html, appData) => {
-    // Remove "Add Item" buttons from custom sections on character sheet
+    if (app.template === 'systems/dnd5e/templates/actors/character-sheet-2.hbs') return;
+
     const addButtons = html.find(`a.item-create`);
-    addButtons.each(function() {
-        // Default dnd5e sheet
+    addButtons.each(function () {
+
         const firstItemLi = $(this).closest(`li.items-header`).next(`ol.item-list`).find(`li.item`);
         const firstItem = app.object.items.get(firstItemLi?.data("itemId"));
 
-        // Tidy5e sheet
         const prevItemLi = $(this).closest(`li.items-footer`).prev(`li.item`);
         const prevItem = app.object.items.get(prevItemLi?.data("itemId"));
 
@@ -59,7 +90,7 @@ Hooks.on("renderActorSheet5eCharacter", (app, html, appData) => {
         for (const header of headers) {
             const ol = header.nextElementSibling;
             if (ol.tagName !== 'OL' || ol.childElementCount) continue;
-    
+
             header.remove();
         }
     }
@@ -67,35 +98,28 @@ Hooks.on("renderActorSheet5eCharacter", (app, html, appData) => {
 
 
 async function customSectionGetData(wrapped) {
-    // Call wrapped function to get appData
     const data = await wrapped();
-    
-    // Loop for Feature-type items, Inventory items, and Spell-type items
+
     for (const type of ["features", "inventory", "spellbook"]) {
         const itemsSpells = type === "spellbook" ? "spells" : "items";
 
-        // Create array containing all items of current type
         const items = data[type].reduce((acc, current) => {
             if (current.isclass) return acc;
 
             return acc.concat(current[itemsSpells]);
         }, []);
 
-        
-        // Get items flagged with a custom section
+
         const customSectionItems = items.filter(i => i.flags[moduleID]?.sectionName);
-        // Create array of custom section names
         const customSections = [];
         for (const item of customSectionItems) {
             if (!customSections.includes(item.flags[moduleID].sectionName)) customSections.push(item.flags[moduleID].sectionName);
         }
 
-        // For items flagged with a custom section, remove them from their original section
         for (const section of data[type]) {
             section[itemsSpells] = section[itemsSpells].filter(i => !customSectionItems.includes(i));
         }
 
-        // Create new custom sections and add to parent array
         for (const customSection of customSections) {
             const newSection = {
                 label: customSection,
@@ -108,7 +132,6 @@ async function customSectionGetData(wrapped) {
             } else if (type === "inventory") {
 
             } else if (type === "spellbook") {
-                //newSection.spells = customSectionItems.filter(i => i.flags[moduleID].sectionName === customSection);
                 newSection.canCreate = false;
                 newSection.canPrepare = true;
                 newSection.dataset = {
@@ -122,6 +145,46 @@ async function customSectionGetData(wrapped) {
         }
     }
 
-    // Return updated data for sheet rendering
+    return data;
+}
+
+async function characterSheet2getData(wrapped, ...args) {
+    const data = await wrapped(...args);
+
+    for (const type of ['inventory', 'features', 'spellbook']) {
+        const items = data[type].reduce((acc, current) => {
+            if (current.type === 'class') return acc;
+
+            return acc.concat(current[type === 'spellbook' ? 'spells' : 'items']);
+        }, []);
+
+        const customSections = [];
+        items.forEach(i => {
+            const customSection = i.getFlag(moduleID, 'sectionName');
+            if (customSection && !customSections.find(s => s.label === customSection)) {
+                const sectionObj = {
+                    label: customSection,
+                    dataset: {
+                        type: customSection
+                    }
+                };
+                if (type === 'spellbook') {
+                    sectionObj.canCreate = false;
+                    sectionObj.canPrepare = true;
+                    sectionObj.usesSlots = false;
+                    sectionObj.spells = items.filter(i => i.type === 'spell' && i.getFlag(moduleID, 'sectionName') === customSection);
+                }
+                customSections.push(sectionObj);
+            };
+        });
+
+        if (type === 'spellbook') {
+            
+        }
+
+
+        data[type].push(...customSections);
+    }
+
     return data;
 }
