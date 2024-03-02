@@ -35,7 +35,6 @@ Hooks.once('init', () => {
         }
         this._applyFilters();
         this._applySorting();
-
     };
     itemListControlsElement.prototype._applyGrouping = new_applyGrouping;
 });
@@ -177,11 +176,6 @@ async function characterSheet2getData(wrapped, ...args) {
                 customSections.push(sectionObj);
             };
         });
-
-        if (type === 'spellbook') {
-            
-        }
-
 
         data[type].push(...customSections);
     }
