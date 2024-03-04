@@ -216,17 +216,19 @@ async function characterSheet2_render(wrapped, ...args) {
                     if (!sectionOrder) return;
 
                     const dir = direction === 'up' ? -1 : 1;
-                    const targetSection = div.closest('div.items-section.card');
-                    const section = targetSection.dataset.type;
-                    const nextSection = dir === -1 ? targetSection.previousElementSibling : targetSection.nextElementSibling;
-                    for (let i = 0; i < (nextSection?.hidden ? 2 : 1); i++) {
-                        const index = sectionOrder.indexOf(section);
-                        const newIndex = index + dir;
-                        if (newIndex < 0 || newIndex > sectionOrder.length - 1) continue;
-
-                        sectionOrder.splice(index, 1);
-                        sectionOrder.splice(newIndex, 0, section);
+                    let sectionDiv = div.closest('div.items-section.card');
+                    const section = sectionDiv.dataset.type;
+                    const index = sectionOrder.indexOf(section);
+                    let newIndex = index;
+                    while (true) {
+                        newIndex = newIndex + dir;
+                        sectionDiv = dir === -1 ? sectionDiv.previousElementSibling : sectionDiv.nextElementSibling;
+                        if (!sectionDiv?.hidden) break;
                     }
+                    if (newIndex < 0 || newIndex > sectionOrder.length - 1) return;
+
+                    sectionOrder.splice(index, 1);
+                    sectionOrder.splice(newIndex, 0, section);
                     await this.actor.setFlag(moduleID, `sectionOrder-${type}`, sectionOrder);
                 };
                 header.appendChild(button);
