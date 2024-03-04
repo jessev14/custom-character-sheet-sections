@@ -7,7 +7,7 @@ Hooks.once('init', () => {
     game.settings.register(moduleID, 'hideEmpty', {
         name: 'Hide Empty Sections',
         scope: 'world',
-        config: true,
+        config: isNewerVersion('2', game.system.version),
         type: Boolean,
         default: false
     });
@@ -29,7 +29,7 @@ Hooks.once('init', () => {
                 const customSection = fItem?.getFlag(moduleID, 'sectionName');
                 const { ungrouped } = item.dataset;
                 const grouped = customSection || item.dataset.grouped;
-                const section = this.getAttribute('for') === 'features' && customSection ? sections[grouped] : sections[group ? grouped : ungrouped];
+                const section = (this.getAttribute('for') === 'features' && customSection) ? sections[grouped] : sections[group ? grouped : ungrouped];
                 section.appendChild(item);
             }
         }
@@ -43,7 +43,10 @@ Hooks.once("ready", () => {
     libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter'].cls.prototype.getData", customSectionGetData, "WRAPPER");
 
     libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter2'].cls.prototype.getData", characterSheet2getData, "WRAPPER");
+    libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter2'].cls.prototype._render", characterSheet2_render, "WRAPPER");
+
 });
+
 
 
 Hooks.on("renderItemSheet", (app, [html], appData) => {
@@ -176,9 +179,58 @@ async function characterSheet2getData(wrapped, ...args) {
                 customSections.push(sectionObj);
             };
         });
-
         data[type].push(...customSections);
-    }
 
+        if (!this.actor.flags[moduleID]?.[`sectionOrder-${type}`]) await this.actor.setFlag(moduleID, `sectionOrder-${type}`, data[type].map(s => s.dataset.type));
+        const sectionOrder = this.actor.getFlag(moduleID, `sectionOrder-${type}`);
+        const newOrder = new Array(sectionOrder.length);
+        for (const sec of data[type]) {
+            const index = sectionOrder.findIndex(so => sec.dataset.type === so);
+            if (index === -1) newOrder.push(sec);
+            else newOrder.splice(index, 1, sec);
+        }
+        data[type] = newOrder;
+    }
     return data;
+}
+
+async function characterSheet2_render(wrapped, ...args) {
+    await wrapped(...args);
+
+    for (const type of ['inventory', 'features', 'spellbook']) {
+        const sectionElement = this.element[0].querySelector(`section[data-item-list="${type}"]`);
+        if (!sectionElement) continue;
+
+        sectionElement.querySelectorAll('div.items-section.card').forEach(div => {
+            const header = div.querySelector('div.items-header.header');
+            for (const direction of ['up', 'down']) {
+                const button = document.createElement('div');
+                button.classList.add('item-header', direction);
+                button.innerHTML = `
+                    <a><i class="fa-solid fa-chevron-${direction}"></i></a>
+                `;
+                button.style['margin-right'] = '10px';
+                button.onclick = async () => {
+                    const { actor } = this;
+                    const sectionOrder = actor.getFlag(moduleID, `sectionOrder-${type}`);
+                    if (!sectionOrder) return;
+
+                    const dir = direction === 'up' ? -1 : 1;
+                    const targetSection = div.closest('div.items-section.card');
+                    const section = targetSection.dataset.type;
+                    const nextSection = dir === -1 ? targetSection.previousElementSibling : targetSection.nextElementSibling;
+                    for (let i = 0; i < (nextSection?.hidden ? 2 : 1); i++) {
+                        const index = sectionOrder.indexOf(section);
+                        const newIndex = index + dir;
+                        if (newIndex < 0 || newIndex > sectionOrder.length - 1) continue;
+
+                        sectionOrder.splice(index, 1);
+                        sectionOrder.splice(newIndex, 0, section);
+                    }
+                    await this.actor.setFlag(moduleID, `sectionOrder-${type}`, sectionOrder);
+                };
+                header.appendChild(button);
+            }
+        });
+    }
 }
