@@ -175,7 +175,6 @@ async function characterSheet2getData(wrapped, ...args) {
                     sectionObj.canPrepare = true;
                     sectionObj.usesSlots = false;
                     sectionObj.spells = items.filter(i => i.type === 'spell' && i.getFlag(moduleID, 'sectionName') === customSection);
-                    // need to pull items with custom sections out of original section
                 }
                 customSections.push(sectionObj);
             };
