@@ -175,11 +175,13 @@ async function characterSheet2getData(wrapped, ...args) {
                     sectionObj.canPrepare = true;
                     sectionObj.usesSlots = false;
                     sectionObj.spells = items.filter(i => i.type === 'spell' && i.getFlag(moduleID, 'sectionName') === customSection);
+                    // need to pull items with custom sections out of original section
                 }
                 customSections.push(sectionObj);
             };
         });
         data[type].push(...customSections);
+        if (type === 'spellbook') continue;
 
         if (!this.actor.flags[moduleID]?.[`sectionOrder-${type}`]) await this.actor.setFlag(moduleID, `sectionOrder-${type}`, data[type].map(s => s.dataset.type));
         const sectionOrder = this.actor.getFlag(moduleID, `sectionOrder-${type}`);
@@ -197,7 +199,7 @@ async function characterSheet2getData(wrapped, ...args) {
 async function characterSheet2_render(wrapped, ...args) {
     await wrapped(...args);
 
-    for (const type of ['inventory', 'features', 'spellbook']) {
+    for (const type of ['inventory', 'features']) {
         const sectionElement = this.element[0].querySelector(`section[data-item-list="${type}"]`);
         if (!sectionElement) continue;
 
