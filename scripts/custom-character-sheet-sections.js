@@ -191,15 +191,17 @@ async function characterSheet2getData(wrapped, ...args) {
             else newOrder.splice(index, 1, sec);
         }
         data[type] = newOrder;
+        await this.actor.setFlag(moduleID, `sectionOrder-${type}`, newOrder.map(s => s.dataset.type));
     }
     return data;
 }
 
 async function characterSheet2_render(wrapped, ...args) {
     await wrapped(...args);
+    if (!this.actor.isOwner) return;
 
     for (const type of ['inventory', 'features']) {
-        const sectionElement = this.element[0].querySelector(`section[data-item-list="${type}"]`);
+        const sectionElement = this.element[0]?.querySelector(`section[data-item-list="${type}"]`);
         if (!sectionElement) continue;
 
         sectionElement.querySelectorAll('div.items-section.card').forEach(div => {
