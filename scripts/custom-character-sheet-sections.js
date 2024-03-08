@@ -212,7 +212,9 @@ async function characterSheet2_render(wrapped, ...args) {
                 button.innerHTML = `
                     <a><i class="fa-solid fa-chevron-${direction}"></i></a>
                 `;
-                button.style['margin-right'] = '10px';
+                button.style.position = 'absolute';
+                button.style.right = direction === 'up' ? '25px' : '10px';
+                button.style['margin-top'] = '10px';
                 button.onclick = async () => {
                     const { actor } = this;
                     const sectionOrder = actor.getFlag(moduleID, `sectionOrder-${type}`);
