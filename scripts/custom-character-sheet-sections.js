@@ -102,6 +102,10 @@ Hooks.on("renderActorSheet5eCharacter", (app, html, appData) => {
 async function customSectionGetData(wrapped) {
     const data = await wrapped();
 
+    if (!Hooks.call('custom-character-sheet-sections.preCustomSectionGetData', data)) {
+        return data;
+    }
+
     for (const type of ["features", "inventory", "spellbook"]) {
         const itemsSpells = type === "spellbook" ? "spells" : "items";
 
