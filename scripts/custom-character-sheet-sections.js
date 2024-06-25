@@ -48,7 +48,6 @@ Hooks.once("ready", () => {
 });
 
 
-
 Hooks.on("renderItemSheet", (app, [html], appData) => {
     const customSectionInput = document.createElement('div');
     customSectionInput.classList.add('form-group');
