@@ -40,11 +40,10 @@ Hooks.once('init', () => {
 });
 
 Hooks.once("ready", () => {
-    libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter'].cls.prototype.getData", customSectionGetData, "WRAPPER");
-
-    libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter2'].cls.prototype.getData", characterSheet2getData, "WRAPPER");
     libWrapper.register(moduleID, "CONFIG.Actor.sheetClasses.character['dnd5e.ActorSheet5eCharacter2'].cls.prototype._render", characterSheet2_render, "WRAPPER");
 
+    libWrapper.register(moduleID, 'dnd5e.applications.actor.ActorSheet5eCharacter.prototype.getData', customSectionGetData, 'WRAPPER');
+    libWrapper.register(moduleID, 'dnd5e.applications.actor.ActorSheet5eCharacter2.prototype.getData', characterSheet2getData, 'WRAPPER');
 });
 
 
@@ -109,11 +108,8 @@ async function customSectionGetData(wrapped) {
         const itemsSpells = type === "spellbook" ? "spells" : "items";
 
         const items = data[type].reduce((acc, current) => {
-            if (current.isclass) return acc;
-
             return acc.concat(current[itemsSpells]);
         }, []);
-
 
         const customSectionItems = items.filter(i => i.flags[moduleID]?.sectionName);
         const customSections = [];
@@ -128,24 +124,23 @@ async function customSectionGetData(wrapped) {
         for (const customSection of customSections) {
             const newSection = {
                 label: customSection,
-                [itemsSpells]: customSectionItems.filter(i => i.flags[moduleID].sectionName === customSection)
+                [itemsSpells]: customSectionItems.filter(i => i.flags[moduleID].sectionName === customSection),
+                dataset: {
+                    type: customSection
+                }
+
             };
             if (type === "features") {
                 newSection.hasActions = true;
                 newSection.isClass = false;
-                newSection.dataset = { type: "feat" };
             } else if (type === "inventory") {
 
             } else if (type === "spellbook") {
                 newSection.canCreate = false;
                 newSection.canPrepare = true;
-                newSection.dataset = {
-                    "preparation.mode": "prepared",
-                    type: "spell"
-                };
+                newSection.dataset['preparation.mode'] = 'prepared';
                 newSection.usesSlots = false;
             }
-
             data[type].push(newSection);
         }
     }
@@ -156,35 +151,11 @@ async function customSectionGetData(wrapped) {
 async function characterSheet2getData(wrapped, ...args) {
     const data = await wrapped(...args);
 
-    for (const type of ['inventory', 'features', 'spellbook']) {
-        const items = data[type].reduce((acc, current) => {
-            if (current.type === 'class') return acc;
+    if (!Hooks.call('custom-character-sheet-sections.preCustomSectionGetData', data)) {
+        return data;
+    }
 
-            return acc.concat(current[type === 'spellbook' ? 'spells' : 'items']);
-        }, []);
-
-        const customSections = [];
-        items.forEach(i => {
-            const customSection = i.getFlag(moduleID, 'sectionName');
-            if (customSection && !customSections.find(s => s.label === customSection)) {
-                const sectionObj = {
-                    label: customSection,
-                    dataset: {
-                        type: customSection
-                    }
-                };
-                if (type === 'spellbook') {
-                    sectionObj.canCreate = false;
-                    sectionObj.canPrepare = true;
-                    sectionObj.usesSlots = false;
-                    sectionObj.spells = items.filter(i => i.type === 'spell' && i.getFlag(moduleID, 'sectionName') === customSection);
-                }
-                customSections.push(sectionObj);
-            };
-        });
-        data[type].push(...customSections);
-        if (type === 'spellbook') continue;
-
+    for (const type of ['inventory', 'features']) {
         if (!this.actor.flags[moduleID]?.[`sectionOrder-${type}`]) await this.actor.setFlag(moduleID, `sectionOrder-${type}`, data[type].map(s => s.dataset.type));
         const sectionOrder = this.actor.getFlag(moduleID, `sectionOrder-${type}`);
         const newOrder = new Array(sectionOrder.length);
@@ -194,13 +165,19 @@ async function characterSheet2getData(wrapped, ...args) {
             else newOrder.splice(index, 1, sec);
         }
         data[type] = newOrder;
-        await this.actor.setFlag(moduleID, `sectionOrder-${type}`, newOrder.map(s => s.dataset.type));
+        const newOrderFlag = newOrder.map(s => s.dataset.type);
+        if (JSON.stringify(sectionOrder) !== JSON.stringify(newOrderFlag) && this.actor.isOwner) await this.actor.setFlag(moduleID, `sectionOrder-${type}`, newOrderFlag);
     }
     return data;
 }
 
 async function characterSheet2_render(wrapped, ...args) {
     await wrapped(...args);
+
+    if (!Hooks.call('custom-character-sheet-sections.preCustomSectionGetData')) {
+        return;
+    }
+
     if (!this.actor.isOwner) return;
 
     for (const type of ['inventory', 'features']) {
